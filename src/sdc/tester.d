@@ -1,8 +1,9 @@
 ﻿module sdc.tester;
+import sdc.terminal;
 import d.location;
 
 private final class StringSource : Source {
-
+	
 	string _name;
 	immutable string[] _packages;
 	this(in string content,in string name, immutable string[] _packages=[]) {
@@ -29,16 +30,17 @@ private final class StringSource : Source {
 
 struct Tester {
 	import util.json;
-
+	
 	JSON conf;
-
+	string[] versions;
+	
 	import sdc.sdc;
-
+	
 	import std.string;
 	import std.stdio;
 	import std.file;
 	import std.conv;
-
+	
 	struct Test {
 	public:
 		string name;
@@ -49,26 +51,26 @@ struct Tester {
 		string[] deps;
 		string code;
 	}
-
+	
 	struct Result {
 		uint testNumber;
 		bool hasPassed;
 		bool compiles;
 	}
-
+	
 	bool runTests() {
 		immutable Test[] tests = readTests;
 		Result[] results;
 		foreach (test;tests) {
-			if (test.number == 35) continue;
-			if (test.number == 36) continue;
-		
-			auto sdc = new SDC(to!string(test.number), conf, 0, ["SDC", "__SDC_TESTER__","D_LP64"]);
+			//			if (test.number == 35) continue;
+			//			if (test.number == 36) continue;
+			
+			auto sdc = new SDC(test.name, conf, 0, versions);
 			sdc.includePath ~= "tests";
 			auto r = Result(test.number, false, true);
-			 
+			
 			try {
-			sdc.compile(new StringSource(test.code, test.name), [sdc.context.getName("test.name")]);
+				sdc.compile(new StringSource(test.code, test.name), [sdc.context.getName(test.name)]);
 				foreach (i,dep;test.deps) {
 					sdc.compile(new StringSource(dep, test.name ~ "_import" ~ to!string(i)));
 				}
@@ -76,29 +78,56 @@ struct Tester {
 				r.compiles = false;
 				writeln(t.msg);
 			}
-
+			
 			try {
 				sdc.buildMain();
 				sdc.codeGen(test.name ~ ".o", test.name ~ ".exe"); 
 			} catch (Throwable t) {
 				writeln(t.msg);
 			}
-
+			
+			if (exists(test.name ~ ".exe")) {
+				import std.process;
+				r.hasPassed = std.process.spawnProcess("./" ~ test.name ~ ".exe").wait == test.retval;
+			} else {
+				if (!test.compiles) r.hasPassed = true;
+			}
+			
 			results ~= r;
 		}
-
-		writeln(results);
-		return true;
+		
+		assert(results.length == tests.length);
+		
+		ulong[] regressions;
+		ulong[] improvements;
+		
+		foreach (i,r;results) {
+			if (tests[i].has_passed && !r.hasPassed) {
+				regressions ~= i;
+			} else if (!tests[i].has_passed && r.hasPassed) {
+				improvements ~= i;
+			}
+		}
+		if (regressions) {
+			writeColouredText(stdout, ConsoleColour.Red, {writeln("following tests regressed: ",regressions);});
+		} else {
+			writeColouredText(stdout, ConsoleColour.Green, {writeln("no regressions! Yeehaa");});
+		}
+		if (improvements) {
+			writeColouredText(stdout, ConsoleColour.Green, {writeln("following tests IMPORVED: ", improvements);});
+		}
+		
+		return regressions.length<1;
 	}
-
+	
 	immutable(Test[]) readTests () {
-
+		
 		static bool yn2bool (string yn) {
 			if (yn == "yes"|| yn == "true") return true;
 			else if (yn == "no"|| yn ==  "false") return false;
 			else assert(0,"Malformed Input "~yn~" has to be yes or no");
 		}
-
+		
 		int testNumber;
 		string dir = "tests";
 		string name;
@@ -109,7 +138,7 @@ struct Tester {
 			t.name = format("test%04s", testNumber);
 			filename = dir ~ std.path.dirSeparator ~ t.name ~ ".d";
 			if (!exists(filename)) break;
-
+			
 			t.number = testNumber;
 			auto f = File(filename, "r");
 			scope (exit) f.close();
@@ -158,10 +187,10 @@ struct Tester {
 			tests ~= t;
 			testNumber++;
 		} 
-
+		
 		return cast(immutable(Test[])) tests;
 	}
 	
-
+	
 }
 
