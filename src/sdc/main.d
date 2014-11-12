@@ -10,6 +10,7 @@ import d.exception;
 import sdc.conf;
 import sdc.sdc;
 import sdc.terminal;
+import sdc.tester;
 
 import std.array;
 import std.getopt;
@@ -26,6 +27,7 @@ int main(string[] args) {
 	auto conf = buildConf();
 	
 	string[] includePath;
+	bool testMode;
 	uint optLevel;
 	bool dontLink;
 	string outputFile;
@@ -34,17 +36,20 @@ int main(string[] args) {
 		"I", &includePath,
 		"O", &optLevel,
 		"c", &dontLink,
+		"test", &testMode,
 		"o", &outputFile,
-		"help|h", delegate() {
-			import std.stdio;
-			writeln("HELP !");
-		}
+		"help|h",&printHelp
 	);
 	
 	foreach(path; includePath) {
 		conf["includePath"] ~= path;
 	}
-	
+
+	if (testMode) {
+		Tester(conf).runTests;
+		return 0;
+	}
+
 	auto files = args[1 .. $];
 	
 	auto executable = "a.out";
@@ -83,3 +88,10 @@ int main(string[] args) {
 	}
 }
 
+void printHelp() {
+	import std.stdio;
+	writeln("usage: sdc [-IOco] inputfile");
+	writeln("-o outfile | sets the outputfile to outfile");
+	writeln("-I includepaths ... | ");
+	writeln("-c | don't link");
+}
